@@ -1,88 +1,130 @@
-from argparse import ArgumentParser
+# project/lit_autoencoder.py
+
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from torch.utils.data import random_split
-
-from torchvision.datasets.mnist import MNIST
-from torchvision import transforms
-
+from torchmetrics.classification import Accuracy
 
 class LitAutoEncoder(pl.LightningModule):
-
-    def __init__(self):
+    def __init__(self, latent_dim=128, classify=False, lr=1e-3):
         super().__init__()
+        self.save_hyperparameters()
+        self.classify = classify
+        self.lr = lr
+
+        # Encoder
         self.encoder = nn.Sequential(
-            nn.Linear(28 * 28, 64),
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),  # [B, 32, 64, 64]
             nn.ReLU(),
-            nn.Linear(64, 3)
+            nn.Conv2d(32, 64, 3, stride=2, padding=1), # [B, 64, 32, 32]
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1), # [B, 128, 16, 16]
+            nn.ReLU(),
         )
+
+        # Decoder
         self.decoder = nn.Sequential(
-            nn.Linear(3, 64),
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),  # [B, 64, 32, 32]
             nn.ReLU(),
-            nn.Linear(64, 28 * 28)
+            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1),   # [B, 32, 64, 64]
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 3, 4, stride=2, padding=1),    # [B, 3, 128, 128]
+            nn.Sigmoid(),
         )
+
+        if self.classify:
+            # Classifier Head
+            self.classifier = nn.Sequential(
+                nn.AdaptiveAvgPool2d((1, 1)),        # [B, 128, 1, 1]
+                nn.Flatten(),                        # [B, 128]
+                nn.Linear(128, 64),
+                nn.ReLU(),
+                nn.Linear(64, 2)                     # Binary classification
+            )
+            self.train_acc = Accuracy(task="binary")
+            self.val_acc = Accuracy(task="binary")
 
     def forward(self, x):
-        # in lightning, forward defines the prediction/inference actions
-        embedding = self.encoder(x)
-        return embedding
+        z = self.encoder(x)
+        if self.classify:
+            return self.classifier(z)
+        else:
+            return self.decoder(z)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        x = x.view(x.size(0), -1)
         z = self.encoder(x)
-        x_hat = self.decoder(z)
-        loss = F.mse_loss(x_hat, x)
+
+        if self.classify:
+            logits = self.classifier(z)
+            loss = F.cross_entropy(logits, y)
+            preds = torch.argmax(logits, dim=1)
+            acc = self.train_acc(preds, y)
+            self.log("train_acc", acc, prog_bar=True)
+            self.log("train_loss", loss, prog_bar=True)
+        else:
+            x_hat = self.decoder(z)
+            loss = F.mse_loss(x_hat, x)
+            self.log("train_loss", loss)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        # validation batches have (x, y)
+        x, y = batch
+        z = self.encoder(x)
+
+        if self.classify:
+            logits = self.classifier(z)
+            loss = F.cross_entropy(logits, y)
+            preds = torch.argmax(logits, dim=1)
+            acc = self.val_acc(preds, y)
+            self.log("val_acc", acc, prog_bar=True)
+            self.log("val_loss", loss, prog_bar=True)
+        else:
+            x_hat = self.decoder(z)
+            loss = F.mse_loss(x_hat, x)
+            self.log("val_loss", loss)
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        # test batches have only x
+        if isinstance(batch, (tuple, list)) and len(batch) == 2:
+            x, y = batch  # just in case test has labels
+        else:
+            x = batch
+            y = None
+
+        z = self.encoder(x)
+
+        if self.classify:
+            logits = self.classifier(z)
+            loss = F.cross_entropy(logits, y) if y is not None else torch.tensor(0.0, device=x.device)
+            preds = torch.argmax(logits, dim=1)
+            # you may want to log test accuracy only if y is available
+            if y is not None:
+                acc = self.val_acc(preds, y)
+                self.log("test_acc", acc, prog_bar=True)
+            self.log("test_loss", loss, prog_bar=True)
+        else:
+            x_hat = self.decoder(z)
+            loss = F.mse_loss(x_hat, x)
+            self.log("test_loss", loss)
+
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        return optimizer
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
+
+    def encode(self, x):
+        self.eval()
+        with torch.no_grad():
+            z = self.encoder(x)
+            if z.ndim == 4:  # [B, C, H, W]
+                z = F.adaptive_avg_pool2d(z, (1, 1))
+                z = z.view(z.size(0), -1)  # [B, C]
+            return z
 
 
-def cli_main():
-    pl.seed_everything(1234)
-
-    # ------------
-    # args
-    # ------------
-    parser = ArgumentParser()
-    parser.add_argument('--batch_size', default=32, type=int)
-    parser.add_argument('--hidden_dim', type=int, default=128)
-    parser = pl.Trainer.add_argparse_args(parser)
-    args = parser.parse_args()
-
-    # ------------
-    # data
-    # ------------
-    dataset = MNIST('', train=True, download=True, transform=transforms.ToTensor())
-    mnist_test = MNIST('', train=False, download=True, transform=transforms.ToTensor())
-    mnist_train, mnist_val = random_split(dataset, [55000, 5000])
-
-    train_loader = DataLoader(mnist_train, batch_size=args.batch_size)
-    val_loader = DataLoader(mnist_val, batch_size=args.batch_size)
-    test_loader = DataLoader(mnist_test, batch_size=args.batch_size)
-
-    # ------------
-    # model
-    # ------------
-    model = LitAutoEncoder()
-
-    # ------------
-    # training
-    # ------------
-    trainer = pl.Trainer.from_argparse_args(args)
-    trainer.fit(model, train_loader, val_loader)
-
-    # ------------
-    # testing
-    # ------------
-    result = trainer.test(test_dataloaders=test_loader)
-    print(result)
-
-
-if __name__ == '__main__':
-    cli_main()

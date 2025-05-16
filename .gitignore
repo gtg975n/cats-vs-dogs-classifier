@@ -32,14 +32,17 @@ tests/tests_tt_dir/
 tests/save_dir
 default/   
 data/
+MNIST/
 test_tube_logs/
 test_tube_data/
 datasets/
 model_weights/
-tests/save_dir  
+tests/save_dir
 tests/tests_tt_dir/
 processed/
 raw/
+tests/tests_tt_dir/  
+
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -125,5 +128,4 @@ venv.bak/
 
 # seed project
 lightning_logs/
-MNIST
 .DS_Store

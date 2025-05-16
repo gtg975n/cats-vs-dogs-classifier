@@ -1,0 +1,3 @@
+classify: false
+latent_dim: 128
+lr: 0.001

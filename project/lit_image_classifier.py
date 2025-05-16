@@ -1,109 +1,93 @@
 from argparse import ArgumentParser
+import os
 
 import torch
 import pytorch_lightning as pl
-from torch.nn import functional as F
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
-
-from torchvision.datasets.mnist import MNIST
-from torchvision import transforms
-
-
-class Backbone(torch.nn.Module):
-    def __init__(self, hidden_dim=128):
-        super().__init__()
-        self.l1 = torch.nn.Linear(28 * 28, hidden_dim)
-        self.l2 = torch.nn.Linear(hidden_dim, 10)
-
-    def forward(self, x):
-        x = x.view(x.size(0), -1)
-        x = torch.relu(self.l1(x))
-        x = torch.relu(self.l2(x))
-        return x
-
+from torchvision.datasets import ImageFolder
+from torchvision import transforms, models
 
 class LitClassifier(pl.LightningModule):
-    def __init__(self, backbone, learning_rate=1e-3):
+    def __init__(self, learning_rate=1e-3):
         super().__init__()
         self.save_hyperparameters()
-        self.backbone = backbone
+
+        # Use pretrained ResNet18 for binary classification
+        self.model = models.resnet18(pretrained=True)
+        self.model.fc = torch.nn.Linear(self.model.fc.in_features, 2)
 
     def forward(self, x):
-        # use forward for inference/predictions
-        embedding = self.backbone(x)
-        return embedding
+        return self.model(x)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        y_hat = self.backbone(x)
-        loss = F.cross_entropy(y_hat, y)
-        self.log('train_loss', loss, on_epoch=True)
+        logits = self(x)
+        loss = F.cross_entropy(logits, y)
+        acc = (logits.argmax(dim=1) == y).float().mean()
+        self.log("train_loss", loss, on_epoch=True)
+        self.log("train_acc", acc, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        y_hat = self.backbone(x)
-        loss = F.cross_entropy(y_hat, y)
-        self.log('valid_loss', loss, on_step=True)
+        logits = self(x)
+        loss = F.cross_entropy(logits, y)
+        acc = (logits.argmax(dim=1) == y).float().mean()
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self.backbone(x)
-        loss = F.cross_entropy(y_hat, y)
-        self.log('test_loss', loss)
+        # In the case of test data, there are no labels, so we only get the images (x)
+        x = batch[0]  # Unpack only the images (no labels in test data)
+
+        # Perform prediction
+        logits = self(x)
+
+        # We can't calculate loss or accuracy without labels in the test dataset
+        return logits  # Just return the logits for the test data
 
     def configure_optimizers(self):
-        # self.hparams available because we called self.save_hyperparameters()
         return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
 
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
-        parser.add_argument('--learning_rate', type=float, default=0.0001)
+        parser.add_argument('--learning_rate', type=float, default=1e-3)
         return parser
 
 
 def cli_main():
     pl.seed_everything(1234)
 
-    # ------------
-    # args
-    # ------------
     parser = ArgumentParser()
-    parser.add_argument('--batch_size', default=32, type=int)
-    parser.add_argument('--hidden_dim', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--data_dir', type=str, default='data')
     parser = pl.Trainer.add_argparse_args(parser)
     parser = LitClassifier.add_model_specific_args(parser)
     args = parser.parse_args()
 
-    # ------------
-    # data
-    # ------------
-    dataset = MNIST('', train=True, download=True, transform=transforms.ToTensor())
-    mnist_test = MNIST('', train=False, download=True, transform=transforms.ToTensor())
-    mnist_train, mnist_val = random_split(dataset, [55000, 5000])
+    # transforms and dataset
+    transform = transforms.Compose([
+        transforms.Resize((128, 128)),
+        transforms.ToTensor()
+    ])
+    dataset = ImageFolder(os.path.join(args.data_dir, "train"), transform=transform)
 
-    train_loader = DataLoader(mnist_train, batch_size=args.batch_size)
-    val_loader = DataLoader(mnist_val, batch_size=args.batch_size)
-    test_loader = DataLoader(mnist_test, batch_size=args.batch_size)
+    # split into train/val
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    # ------------
-    # model
-    # ------------
-    model = LitClassifier(Backbone(hidden_dim=args.hidden_dim), args.learning_rate)
+    train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size)
 
-    # ------------
-    # training
-    # ------------
+    model = LitClassifier(learning_rate=args.learning_rate)
+
     trainer = pl.Trainer.from_argparse_args(args)
     trainer.fit(model, train_loader, val_loader)
 
-    # ------------
-    # testing
-    # ------------
-    result = trainer.test(test_dataloaders=test_loader)
-    print(result)
-
+    # You could also add test set here if labeled, but "test1/" is usually unlabeled
 
 if __name__ == '__main__':
     cli_main()

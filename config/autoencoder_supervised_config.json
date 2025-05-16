@@ -1,0 +1,8 @@
+{
+    "model": "AutoEncoder+Classifier",
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "epochs": 10,
+    "latent_dim": 128,
+    "classify": false
+}

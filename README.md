@@ -1,89 +1,42 @@
-### Deep learning project seed
-Use this seed to start new deep learning / ML projects.
-
-- Built in setup.py
-- Built in requirements
-- Examples with MNIST
-- Badges
-- Bibtex
-
-#### Goals  
-The goal of this seed is to structure ML paper-code the same so that work can easily be extended and replicated.   
-
-### DELETE EVERYTHING ABOVE FOR YOUR PROJECT  
+# Cats vs. Dogs: Autoencoder-Based Classifier
  
----
+## Overview   
+#### In this project I compared three different approaches for binary image classification on a labeled dataset of cat and dog images obtained from a previous Kaggle competition: https://www.kaggle.com/c/dogs-vs-cats. The training folder contained 25,000 images of dogs and cats. I split the labeled images into training and validation sets with an 80/20 ratio to evaluate model performance since the test data were unlabeled. Predictions were made for the labels of images in the test dataset (test1.zip), i.e., 1 = dog, 0 = cat.
 
-<div align="center">    
- 
-# Your Project Name     
+## Motivation
+#### The goal was to explore unsupervised feature learning via autoencoders and evaluate how well such learned features support image classification compared to a purely supervised CNN. This helped deepen my understanding of representation learning and model interpretability.
 
-[![Paper](http://img.shields.io/badge/paper-arxiv.1001.2234-B31B1B.svg)](https://www.nature.com/articles/nature14539)
-[![Conference](http://img.shields.io/badge/NeurIPS-2019-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)
-[![Conference](http://img.shields.io/badge/ICLR-2019-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)
-[![Conference](http://img.shields.io/badge/AnyConference-year-4b44ce.svg)](https://papers.nips.cc/book/advances-in-neural-information-processing-systems-31-2018)  
-<!--
-ARXIV   
-[![Paper](http://img.shields.io/badge/arxiv-math.co:1480.1111-B31B1B.svg)](https://www.nature.com/articles/nature14539)
--->
-![CI testing](https://github.com/PyTorchLightning/deep-learning-project-template/workflows/CI%20testing/badge.svg?branch=master&event=push)
-
-
-<!--  
-Conference   
--->   
-</div>
- 
-## Description   
-What it does   
-
-## How to run   
-First, install dependencies   
+## Installation
+#### Clone the repository and install required packages:
 ```bash
-# clone project   
-git clone https://github.com/YourGithubName/deep-learning-project-template
-
-# install project   
-cd deep-learning-project-template 
-pip install -e .   
+git clone https://github.com/gtg975n/cats-vs-dogs-classifier.git
+cd cats-vs-dogs-classifier
 pip install -r requirements.txt
+
  ```   
- Next, navigate to any file and run it.   
- ```bash
-# module folder
-cd project
+ 
+## Usage
+#### Launch the main Jupyter notebook cats_vs_dogs_autoencoder.ipynb to reproduce training, evaluation, and visualization.
 
-# run module (example: mnist as your main contribution)   
-python lit_classifier_main.py    
-```
+#### Alternatively, explore the project/ folder for modular scripts and models.
 
-## Imports
-This project is setup as a package which means you can now easily import any file into any other file like so:
-```python
-from project.datasets.mnist import mnist
-from project.lit_classifier_main import LitClassifier
-from pytorch_lightning import Trainer
+## Results Summary
+#### ResNet18 achieved the highest classification accuracy, serving as a strong supervised baseline.
 
-# model
-model = LitClassifier()
+#### The Autoencoder + classifier pipeline captured important image features like edges and contours but lagged in accuracy.
 
-# data
-train, val, test = mnist()
+#### Joint training of the autoencoder and classifier improved classification performance compared to the two-stage approach.
 
-# train
-trainer = Trainer()
-trainer.fit(model, train, val)
-
-# test using the best model!
-trainer.test(test_dataloaders=test)
-```
+#### Difference plots highlighted that the autoencoder primarily learned edge and contour information, which are key for downstream classification.
 
 ### Citation   
+#### If you use this project, please cite:
 ```
-@article{YourName,
-  title={Your Title},
-  author={Your team},
-  journal={Location},
-  year={Year}
+@misc{mymccatsdogs2025,
+  author = {George McConnell},
+  title = {Cats vs. Dogs: Autoencoder-Based Image Classification},
+  year = {2025},
+  note = {GitHub repository: https://github.com/gtg975n/cats-vs-dogs-classifier}
 }
+
 ```   
